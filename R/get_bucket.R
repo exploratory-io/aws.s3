@@ -16,7 +16,7 @@
 #'   b <- bucketlist()
 #'   get_bucket(b[1,1])
 #'   get_bucket_df(b[1,1])
-#' 
+#'
 #'   # bucket names with dots
 #'   ## this (default) should work:
 #'   get_bucket("this.bucket.has.dots", url_style = "path")
@@ -44,29 +44,42 @@ get_bucket <- function(bucket,
     r <- s3HTTP(verb = "GET", bucket = bucket, query = query, parse_response = parse_response, ...)
 
     if (isTRUE(parse_response)) {
+        shouldStop <- FALSE
+        nextMarker <- ""
+        # if IsTruncted is true, need to send another request to get the remaining result.
+        # NOTE: There are two cases where you should stop even if IsTruncted is true. (Most likely this happens for an empty bucket)
+        # Case1: Contents is empty.
+        # Case2: nextMarker is same as previous marker.
         while (
             r[["IsTruncated"]] == "true" &&
             !is.null(max) &&
-            as.integer(r[["MaxKeys"]]) < max
+            as.integer(r[["MaxKeys"]]) < max &&
+            !shouldStop
         ) {
-            query <- list(
-                prefix = prefix,
-                delimiter = delimiter,
-                "max-keys" = as.integer(pmin(max - as.integer(r[["MaxKeys"]]), 1000)),
-                marker = tail(r, 1)[["Contents"]][["Key"]]
-            )
-            extra <- s3HTTP(verb = "GET", bucket = bucket, query = query, parse_response = parse_response, ...)
-            new_r <- c(r, tail(extra, -5))
-            new_r[["MaxKeys"]] <- as.character(as.integer(r[["MaxKeys"]]) + as.integer(extra[["MaxKeys"]]))
-            new_r[["IsTruncated"]] <- extra[["IsTruncated"]]
-            attr(new_r, "x-amz-id-2") <- attr(r, "x-amz-id-2")
-            attr(new_r, "x-amz-request-id") <- attr(r, "x-amz-request-id")
-            attr(new_r, "date") <- attr(r, "date")
-            attr(new_r, "x-amz-bucket-region") <- attr(r, "x-amz-bucket-region")
-            attr(new_r, "content-type") <- attr(r, "content-type")
-            attr(new_r, "transfer-encoding") <- attr(r, "transfer-encoding")
-            attr(new_r, "server") <- attr(r, "server")
-            r <- new_r
+            if (is.null(tail(result, 1)[["Contents"]])) { # if result does not have Contents, stop here.
+              shouldStop <- TRUE
+            } else if (tail(result, 1)[["Contents"]][["Key"]] == nextMarker) { # if nextMarker is same as the current one, stop here.
+              shouldStop <- TRUE
+            } else {
+                query <- list(
+                    prefix = prefix,
+                    delimiter = delimiter,
+                    "max-keys" = as.integer(pmin(max - as.integer(r[["MaxKeys"]]), 1000)),
+                    marker = tail(r, 1)[["Contents"]][["Key"]]
+                )
+                extra <- s3HTTP(verb = "GET", bucket = bucket, query = query, parse_response = parse_response, ...)
+                new_r <- c(r, tail(extra, -5))
+                new_r[["MaxKeys"]] <- as.character(as.integer(r[["MaxKeys"]]) + as.integer(extra[["MaxKeys"]]))
+                new_r[["IsTruncated"]] <- extra[["IsTruncated"]]
+                attr(new_r, "x-amz-id-2") <- attr(r, "x-amz-id-2")
+                attr(new_r, "x-amz-request-id") <- attr(r, "x-amz-request-id")
+                attr(new_r, "date") <- attr(r, "date")
+                attr(new_r, "x-amz-bucket-region") <- attr(r, "x-amz-bucket-region")
+                attr(new_r, "content-type") <- attr(r, "content-type")
+                attr(new_r, "transfer-encoding") <- attr(r, "transfer-encoding")
+                attr(new_r, "server") <- attr(r, "server")
+                r <- new_r
+            }
         }
     } else {
         return(r)
@@ -84,7 +97,7 @@ get_bucket <- function(bucket,
     cp <- att[names(att) == "CommonPrefixes"]
     att[names(att) == "CommonPrefixes"] <- NULL
     att[["CommonPrefixes"]] <- as.character(cp)
-    
+
     # return value
     out <- structure(r, class = "s3_bucket")
     attributes(out) <- c(attributes(out), att)
