@@ -56,9 +56,11 @@ get_bucket <- function(bucket,
             as.integer(r[["MaxKeys"]]) < max &&
             !shouldStop
         ) {
-            if (is.null(tail(result, 1)[["Contents"]])) { # if result does not have Contents, stop here.
+            if (is.null(r)) {
               shouldStop <- TRUE
-            } else if (tail(result, 1)[["Contents"]][["Key"]] == nextMarker) { # if nextMarker is same as the current one, stop here.
+            } else if (is.null(tail(r, 1)[["Contents"]])) { # if result does not have Contents, stop here.
+              shouldStop <- TRUE
+            } else if (tail(r, 1)[["Contents"]][["Key"]] == nextMarker) { # if nextMarker is same as the current one, stop here.
               shouldStop <- TRUE
             } else {
                 query <- list(
